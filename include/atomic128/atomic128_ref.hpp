@@ -9,6 +9,10 @@
 #  define __ATOMIC128__MSVC
 #endif
 
+#ifdef __ATOMIC128_MSVC
+#  include <intrin.h>  // for _InterlockedCompareExchange128
+#endif
+
 namespace atomic128 {
 
 template <typename T>
@@ -44,7 +48,25 @@ public:
     }
     else {  // Here comes the trouble...
 #ifdef __ATOMIC128__MSVC
-      // ...
+      /* It's still not so bad on Windows, we just need to use the
+       * proper intrinsic and be naughty enough to break the strict
+       * aliasing rule (which is not that bad because of the
+       * trivially_copyable requirement) */
+      const auto obj_p64 = reinterpret_cast<int64_t*>(std::addressof(obj_));
+      const auto new_p64 =
+        reinterpret_cast<const int64_t*>(std::addressof(new_val));
+
+      T old = old_val;  // Non-atomic read here
+      const auto old_p64 = reinterpret_cast<int64_t*>(std::addressof(old));
+
+      // The intrinsic acts as a full barrier so we can ignore the
+      // specified memory order: It's always seq_cst in Philadelphia.
+      if (_InterlockedCompareExchange128(obj_p64,
+                                         *(new_p64 + 1), *new_p64, old_p64))
+        return true;
+
+      if (std::addressof(old_val) != std::addressof(obj_)) old_val = old;
+      return false;
 #elif defined(__GCC_HAVE_SYNC_COMPARE_AND_SWAP_16)
       /* GCC for x86 won't emit the cmpxchg16b instruction through the
        * __atomic built-ins or std::atomic interfaces but will do so
