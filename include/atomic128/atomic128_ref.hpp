@@ -13,6 +13,15 @@
 #  include <intrin.h>  // for _InterlockedCompareExchange128
 #endif
 
+/**
+ * @file
+ * A cross-platform implementation of DWCAS mimicking the
+ * std::atomic_ref interface
+ *
+ * @author    patternnoster@github
+ * @copyright 2023, under the MIT License (see /LICENSE for details)
+ **/
+
 namespace atomic128 {
 
 template <typename T>
@@ -22,8 +31,8 @@ concept atomic128_referenceable =
 using mo_t = std::memory_order;
 
 /**
- * @brief Cross-platform implementation of DWCAS mimicking the
- *        std::atomic_ref interface
+ * @brief Applies atomic operations to (properly aligned) 16-byte
+ *        types enforcing the use of native DWCAS instructions
  *
  * We're in the middle of 202xs and the DWCAS instructions have been
  * around for decades, yet there is still a nightmare going on with
