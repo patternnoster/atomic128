@@ -25,11 +25,13 @@ TEST(Atomic128RefTests, cas) {
     vec next = { mem.ptr + 1, mem.ctr + 1 };
     atomic128_ref ref(mem);
 
-    ASSERT_FALSE(ref.compare_exchange_weak(orig_bad, next));
+    ASSERT_FALSE(ref.compare_exchange_strong(orig_bad, next));
     ASSERT_EQ(mem, orig_good);  // No change
     ASSERT_EQ(orig_bad, prev);  // Load old value
 
-    ASSERT_TRUE(ref.compare_exchange_weak(orig_good, next));
+    ASSERT_TRUE(ref.compare_exchange_strong(orig_good, next,
+                                            mo_t::acq_rel,
+                                            mo_t::relaxed));
     ASSERT_EQ(mem, next);
     ASSERT_EQ(orig_good, prev);
   }

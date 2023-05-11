@@ -117,6 +117,42 @@ public:
     }
   }
 
+  bool compare_exchange_weak(T& old_val, const T& new_val,
+            [[maybe_unused]] const mo_t mo_succ,
+            [[maybe_unused]] const mo_t mo_fail) const noexcept {
+    if constexpr (std::atomic_ref<T>::is_always_lock_free)
+      return
+        std::atomic_ref(obj_).compare_exchange_weak(old_val, new_val,
+                                                    mo_succ, mo_fail);
+    else
+      /* The intrinsic/built-in alternatives we use always create a
+       * full memory barrier, so we can safely ignore the order param */
+      return compare_exchange_weak(old_val, new_val);
+  }
+
+  bool compare_exchange_strong(T& old_val, const T& new_val,
+                               const mo_t mo = mo_t::seq_cst) const noexcept {
+    if constexpr (std::atomic_ref<T>::is_always_lock_free)
+      return
+        std::atomic_ref(obj_).compare_exchange_strong(old_val, new_val, mo);
+    else
+      /* Also, the intrinsic/built-in alternatives we use offer
+       * guarantees of a successful swap on equality, so we can just
+       * do that */
+      return compare_exchange_weak(old_val, new_val, mo);
+  }
+
+  bool compare_exchange_strong(T& old_val, const T& new_val,
+              [[maybe_unused]] const mo_t mo_succ,
+              [[maybe_unused]] const mo_t mo_fail) const noexcept {
+    if constexpr (std::atomic_ref<T>::is_always_lock_free)
+      return
+        std::atomic_ref(obj_).compare_exchange_strong(old_val, new_val,
+                                                      mo_succ, mo_fail);
+    else  // See above why
+      return compare_exchange_weak(old_val, new_val);
+  }
+
 private:
   T& obj_;
 };
