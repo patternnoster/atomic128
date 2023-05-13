@@ -43,6 +43,11 @@ using mo_t = std::memory_order;
 template <atomic128_referenceable T>
 class atomic128_ref {
 public:
+  using value_type = T;
+
+  constexpr static bool is_always_lock_free = true/*, that's why we do this */;
+  constexpr static std::size_t required_alignment = alignof(T);
+
   explicit atomic128_ref(T& obj) noexcept: obj_(obj) {}
   atomic128_ref(const atomic128_ref& rhs) noexcept: obj_(rhs.obj_) {}
 
@@ -152,6 +157,59 @@ public:
     else  // See above why
       return compare_exchange_weak(old_val, new_val);
   }
+
+  T load(const mo_t mo = mo_t::seq_cst) const noexcept {
+    if constexpr (std::atomic_ref<T>::is_always_lock_free) {
+      /* Although on x86 the compiler is probably doing the same
+       * cmpxchg16b trick as below under the covers, we call it
+       * directly anyway here just in case */
+      return std::atomic_ref(obj_).load(mo);
+    }
+    else {
+      T result = std::is_trivially_constructible_v<T> ? T{} : obj_;
+      compare_exchange_weak(result, result, mo);
+      return result;
+    }
+  }
+
+  T exchange(const T& val, const mo_t mo = mo_t::seq_cst) const noexcept {
+    if constexpr (std::atomic_ref<T>::is_always_lock_free) {
+      /* And please don't think we can just replace these conditions
+       * with a using directive with std::conditional, that's just a
+       * terrible idea that can lead to all sorts of porting
+       * problems */
+      return std::atomic_ref(obj_).exchange(val, mo);
+    }
+    else {
+      T result = obj_;  // An additional non-atomic read is better
+                        // than a failure of an expensive instruction
+      while (!compare_exchange_weak(result, val, mo));
+      return result;
+    }
+  }
+
+  void store(const T& val, const mo_t mo = mo_t::seq_cst) const noexcept {
+    if constexpr (std::atomic_ref<T>::is_always_lock_free)
+      std::atomic_ref(obj_).store(val, mo);
+    else
+      exchange(val, mo);
+  }
+
+  operator T() const noexcept {
+    return load();
+  }
+
+  T operator=(const T& rhs) const noexcept {
+    store(rhs);
+    return rhs;
+  }
+
+  bool is_lock_free() const noexcept {
+    return true;  // Because of the static_assert above, the class
+                  // simply won't compile if it isn't lock-free
+  }
+
+  /* We don't mimic the wait/notify interface so that's it for now */
 
 private:
   T& obj_;
