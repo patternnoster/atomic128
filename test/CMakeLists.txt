@@ -1,4 +1,4 @@
-cmake_minimum_required(VERSION 3.18)
+cmake_minimum_required(VERSION 3.23)
 
 add_executable(atomic128_tests atomic128_tests.cpp)
 target_link_libraries(atomic128_tests PRIVATE atomic128 gtest_main)
