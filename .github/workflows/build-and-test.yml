@@ -1,0 +1,37 @@
+name: build & test
+on: push
+jobs:
+  build-and-test:
+    strategy:
+      matrix:
+        os: [ubuntu-latest, windows-latest]
+        compiler: [gcc-13, msvc-latest, clang-16]
+        exclude:
+          - os: ubuntu-latest
+            compiler: msvc-latest
+          - os: windows-latest
+            compiler: gcc-13
+      fail-fast: false
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v3
+        with:
+          submodules: true
+      - name: prepare
+        if: ${{ matrix.os != 'windows-latest' }}
+        run: |
+          ${{ matrix.os == 'ubuntu-latest'
+              && (matrix.compiler == 'gcc-13' && 'sudo apt-get install g++-13'
+                  || matrix.compiler == 'clang-16' && 'wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && sudo ./llvm.sh 16') }}
+      - name: configure
+        env:
+          CC: ${{ matrix.compiler }}
+          CXX: ${{ matrix.compiler == 'gcc-13' && 'g++-13' || 'clang++-16' }}
+          toolset: ${{ matrix.os == 'windows-latest' && matrix.compiler == 'clang-16' && 'ClangCL' || null }}
+        run: cmake . -Bbuild -DATOMIC128_BUILD_TESTS=ON ${{ env.toolset && format('-T {0}', env.toolset) }} ${{ env.compiler != 'msvc-latest' && '-DCMAKE_CXX_FLAGS=-mcx16' }}
+      - name: build
+        run: cmake --build build
+      - name: test
+        run: ctest --test-dir build
+      - name: install
+        run: cmake --install build --prefix build/install
