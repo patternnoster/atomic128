@@ -13,7 +13,9 @@ target_include_directories(atomic128 INTERFACE $<BUILD_INTERFACE:${INCLUDE_DIR}>
 if(ATOMIC128_BUILD_TESTS)
   enable_testing()
   add_subdirectory(extern)
+
   add_subdirectory(test)
+  add_subdirectory(example)
 endif()
 
 target_sources(atomic128 INTERFACE
