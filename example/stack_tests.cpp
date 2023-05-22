@@ -106,3 +106,76 @@ TEST(StackTests, base_multi_thread) {
 
   ASSERT_EQ(items_ctr, threads_ctr);
 }
+
+TEST(StackTests, randomized_multi_thread) {
+  constexpr size_t ThreadsCount = 8;
+  constexpr size_t NodesPerThread = 100000;
+  constexpr size_t NodesTotal = ThreadsCount * NodesPerThread;
+
+  stack<stack_item> stack;
+
+  const auto items = new stack_item[NodesTotal];
+
+  const auto results = new uint64_t[NodesTotal]{};
+  const auto retrieved = new stack_item*[NodesTotal]{};
+
+  const auto routine = [&stack, items,
+                        results, retrieved](const size_t id) {
+    const size_t base_offset = NodesPerThread * id;
+
+    size_t stored = 0;
+    size_t loaded = 0;
+
+    size_t last_item = 0;
+    size_t last_retrieved = 0;
+
+    for (;;) {
+      const bool can_store = stored < NodesPerThread;
+      const bool can_load = loaded < NodesPerThread;
+      if (!can_store && !can_load) break;
+
+      const auto rand_val = rand();
+      if (!can_load || (can_store && rand_val & 1)) {  // Push
+        stack_item* item;
+
+        if (!last_retrieved || rand_val & 2) {  // Use new node
+          item = items + base_offset + last_item;
+          ++last_item;  // never runs out: stored < NodesPerThread
+        }
+        else { // Use popped node
+          --last_retrieved;  // >= 0
+          item = retrieved[base_offset + last_retrieved];
+        }
+
+        item->val = base_offset + stored;
+        stack.push(item);
+        ++stored;
+      }
+      else {  // Pop
+        const auto item = stack.pop();
+        if (!item) continue;
+
+        // last_retrieved <= loaded
+        retrieved[base_offset + last_retrieved++] = item;
+        results[base_offset + loaded++] = item->val;
+      }
+    }
+
+    // last_retrieved == last_item now
+    for (; last_item < NodesPerThread; ++last_item)
+      retrieved[base_offset + last_item] = items + base_offset + last_item;
+  };
+
+  run_test_threads<ThreadsCount>(routine);
+
+  std::sort(results, results + NodesTotal);
+  std::sort(retrieved, retrieved + NodesTotal);
+
+  ASSERT_EQ(results[0], 0);
+  ASSERT_EQ(retrieved[0], items);
+
+  for (size_t i = 1; i < NodesTotal; ++i) {
+    ASSERT_EQ(results[i], results[i-1] + 1);
+    ASSERT_EQ(retrieved[i], retrieved[i-1] + 1);
+  }
+}
