@@ -10,6 +10,11 @@ cmake $SOURCE_PATH
 cmake --install . --prefix=$INSTALL_PATH
 ```
 
+Additionally, the example lock-free stack header can be installed as well using the CMake option `ATOMIC128_INSTALL_STACK`:
+```sh
+cmake $SOURCE_PATH -DATOMIC128_INSTALL_STACK=ON
+```
+
 ### Usage
 
 The `atomic128_ref<T>` class template mimicks the interface of the standard C++20 `std::atomic_ref<T>` from `<atomic>` (excepts for the `wait`/`notify` methods) and is intended to be used in the same way:
@@ -29,9 +34,11 @@ atomic128_ref ref{f2};
 ref.store({nullptr, 1}, std::memory_order_relaxed);
 ```
 
+For an example of a simplistic lock-free stack that uses DWCAS to avoid the ABA problem see the `example` directory.
+
 ### Building the tests
 
-Use the `ATOMIC128_BUILD_TESTS=ON` CMake option to build the library tests on your system. Note that some compilers (e.g., GCC) may require additional flags (i.e., `-mcx16` on x86_64) to enable the DWCAS instructions. Thus, one can run the following commands (in the source directory):
+Use the `ATOMIC128_BUILD_TESTS=ON` CMake option to build the library tests and the example stack tests on your system. Note that some compilers (e.g., GCC) may require additional flags (i.e., `-mcx16` on x86_64) to enable the DWCAS instructions. Thus, one can run the following commands (in the source directory):
 ```sh
 mkdir build && cd build
 cmake .. -DATOMIC128_BUILD_TESTS=ON -DCMAKE_CXX_FLAGS='-mcx16'
