@@ -4,6 +4,10 @@
 
 #include "atomic128/atomic128_ref.hpp"
 
+#if !(defined(__cpp_lib_atomic_ref) || defined(__GCC_ATOMIC_POINTER_LOCK_FREE))
+#  error Either std::atomic_ref or the __atomic_* built-ins must be available
+#endif
+
 /**
  * @file
  * A simplistic lock-free stack implementation that uses our interface
@@ -60,8 +64,15 @@ private:
 
   auto read_head(const mo_t mo) const noexcept {
     return head_t {  // No need to use the 16b instruction for reads
+#ifdef __cpp_lib_atomic_ref
       .ptr = std::atomic_ref(head_.ptr).load(mo),
       .aba_counter = std::atomic_ref(head_.aba_counter).load(mo_t::relaxed)
+#else
+      .ptr = __atomic_load_n(&head_.ptr,
+                             (mo == mo_t::acquire
+                              ? __ATOMIC_ACQUIRE : __ATOMIC_RELAXED)),
+      .aba_counter = __atomic_load_n(&head_.aba_counter, __ATOMIC_RELAXED)
+#endif
     };
   }
 
@@ -78,7 +89,11 @@ void stack<T>::push(T* const ptr) noexcept {
   new_head.ptr = ptr;
 
   do {
+#ifdef __cpp_lib_atomic_ref
     std::atomic_ref(ptr->next).store(old_head.ptr, mo_t::relaxed);
+#else
+    __atomic_store_n(&ptr->next, old_head.ptr, __ATOMIC_RELAXED);
+#endif
     new_head.aba_counter = old_head.aba_counter + 1;
   }
   while (!atomic128_ref(head_).compare_exchange_weak(old_head, new_head,
@@ -100,8 +115,11 @@ T* stack<T>::pop() noexcept {
     if (!old_head.ptr) return nullptr;  // Empty stack
 
     new_head = {
-      .ptr = static_cast<T*>(std::atomic_ref(old_head.ptr->next)
-                             .load(mo_t::relaxed)),
+#ifdef __cpp_lib_atomic_ref
+      .ptr = std::atomic_ref(old_head.ptr->next).load(mo_t::relaxed),
+#else
+      .ptr = __atomic_load_n(&old_head.ptr->next, __ATOMIC_RELAXED),
+#endif
       .aba_counter = old_head.aba_counter + 1
     };
   }

@@ -13,6 +13,10 @@
 #  include <intrin.h>  // for _InterlockedCompareExchange128
 #endif
 
+#ifndef __cpp_lib_atomic_ref
+namespace std { template <typename> struct atomic_ref; }
+#endif
+
 /**
  * @file
  * A cross-platform implementation of DWCAS mimicking the
@@ -48,12 +52,18 @@ public:
   constexpr static bool is_always_lock_free = true/*, that's why we do this */;
   constexpr static std::size_t required_alignment = alignof(T);
 
+#ifdef __cpp_lib_atomic_ref
+  constexpr static bool use_native = std::atomic_ref<T>::is_always_lock_free;
+#else
+  constexpr static bool use_native = false;
+#endif
+
   explicit atomic128_ref(T& obj) noexcept: obj_(obj) {}
   atomic128_ref(const atomic128_ref& rhs) noexcept: obj_(rhs.obj_) {}
 
   bool compare_exchange_weak(T& old_val, const T& new_val,
             [[maybe_unused]] const mo_t mo = mo_t::seq_cst) const noexcept {
-    if constexpr (std::atomic_ref<T>::is_always_lock_free) {
+    if constexpr (use_native) {
       /* The cleanest of all possible solutions. For now, only
        * supported by Clang and Intel on x86 with the -mcx16 flag,
        * Clang on ARM64, and Apple Clang */
@@ -62,6 +72,7 @@ public:
     }
     else {  // Here comes the trouble...
 #ifdef __ATOMIC128__MSVC
+#  define __ATOMIC_128__HAS_BUILTIN
       /* It's still not so bad on Windows, we just need to use the
        * proper intrinsic and be naughty enough to break the strict
        * aliasing rule (which is not that bad because of the
@@ -82,6 +93,7 @@ public:
       if (std::addressof(old_val) != std::addressof(obj_)) old_val = old;
       return false;
 #elif defined(__GCC_HAVE_SYNC_COMPARE_AND_SWAP_16)
+#  define __ATOMIC_128__HAS_BUILTIN
       /* GCC for x86 won't emit the cmpxchg16b instruction through the
        * __atomic built-ins or std::atomic interfaces but will do so
        * with a __sync built-in if a proper flag (like -mcx16) was
@@ -107,12 +119,13 @@ public:
       if (old_p128 != obj_p128) *old_p128 = result;
       return false;
 #else
+#  undef __ATOMIC_128__HAS_BUILTIN
       /* The non-lock-free DWCAS implies a costly library call with a
        * possible runtime capability check and/or locking, which kind
        * of defeats the purpose. Disable that implicit behavior and
        * force the user to pass the proper target architecture flags
        * (or avoid using DWCAS altogether) */
-      static_assert(std::atomic_ref<T>::is_always_lock_free,
+      static_assert(use_native,
                     "The DWCAS operation is not considered lock-free "
                     "on the target architecture. Try signaling the "
                     "availability of DWCAS instruction to the compiler "
@@ -125,7 +138,7 @@ public:
   bool compare_exchange_weak(T& old_val, const T& new_val,
             [[maybe_unused]] const mo_t mo_succ,
             [[maybe_unused]] const mo_t mo_fail) const noexcept {
-    if constexpr (std::atomic_ref<T>::is_always_lock_free)
+    if constexpr (use_native)
       return
         std::atomic_ref(obj_).compare_exchange_weak(old_val, new_val,
                                                     mo_succ, mo_fail);
@@ -137,7 +150,7 @@ public:
 
   bool compare_exchange_strong(T& old_val, const T& new_val,
                                const mo_t mo = mo_t::seq_cst) const noexcept {
-    if constexpr (std::atomic_ref<T>::is_always_lock_free)
+    if constexpr (use_native)
       return
         std::atomic_ref(obj_).compare_exchange_strong(old_val, new_val, mo);
     else
@@ -150,7 +163,7 @@ public:
   bool compare_exchange_strong(T& old_val, const T& new_val,
               [[maybe_unused]] const mo_t mo_succ,
               [[maybe_unused]] const mo_t mo_fail) const noexcept {
-    if constexpr (std::atomic_ref<T>::is_always_lock_free)
+    if constexpr (use_native)
       return
         std::atomic_ref(obj_).compare_exchange_strong(old_val, new_val,
                                                       mo_succ, mo_fail);
@@ -159,7 +172,7 @@ public:
   }
 
   T load(const mo_t mo = mo_t::seq_cst) const noexcept {
-    if constexpr (std::atomic_ref<T>::is_always_lock_free) {
+    if constexpr (use_native) {
       /* Although on x86 the compiler is probably doing the same
        * cmpxchg16b trick as below under the covers, we call it
        * directly anyway here just in case */
@@ -173,7 +186,7 @@ public:
   }
 
   T exchange(const T& val, const mo_t mo = mo_t::seq_cst) const noexcept {
-    if constexpr (std::atomic_ref<T>::is_always_lock_free) {
+    if constexpr (use_native) {
       /* And please don't think we can just replace these conditions
        * with a using directive with std::conditional, that's just a
        * terrible idea that can lead to all sorts of porting
@@ -189,7 +202,7 @@ public:
   }
 
   void store(const T& val, const mo_t mo = mo_t::seq_cst) const noexcept {
-    if constexpr (std::atomic_ref<T>::is_always_lock_free)
+    if constexpr (use_native)
       std::atomic_ref(obj_).store(val, mo);
     else
       exchange(val, mo);
