@@ -6,11 +6,18 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest]
         compiler: [gcc-13, msvc-latest, clang-16]
+        stdlib: [null]
         exclude:
           - os: ubuntu-latest
             compiler: msvc-latest
           - os: windows-latest
             compiler: gcc-13
+        include:
+          - os: macos-latest
+            compiler: clang-16
+          - os: ubuntu-latest
+            compiler: clang-16
+            stdlib: libc++
       fail-fast: false
     runs-on: ${{ matrix.os }}
     steps:
@@ -22,13 +29,16 @@ jobs:
         run: |
           ${{ matrix.os == 'ubuntu-latest'
               && (matrix.compiler == 'gcc-13' && 'sudo apt-get install g++-13'
-                  || matrix.compiler == 'clang-16' && 'wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && sudo ./llvm.sh 16') }}
+                  || matrix.compiler == 'clang-16' && 'wget https://apt.llvm.org/llvm.sh && chmod +x llvm.sh && sudo ./llvm.sh 16 all')
+              || matrix.os == 'macos-latest'
+                 && 'brew update && brew install llvm@16 && echo /usr/local/opt/llvm@16/bin >> $GITHUB_PATH' }}
       - name: configure
         env:
-          CC: ${{ matrix.compiler }}
-          CXX: ${{ matrix.compiler == 'gcc-13' && 'g++-13' || 'clang++-16' }}
+          CC: ${{ matrix.os == 'macos-latest' && 'clang' || matrix.compiler }}
+          CXX: ${{ matrix.compiler == 'gcc-13' && 'g++-13' || matrix.os == 'macos-latest' && 'clang++' || 'clang++-16' }}
           toolset: ${{ matrix.os == 'windows-latest' && matrix.compiler == 'clang-16' && 'ClangCL' || null }}
-        run: cmake . -Bbuild -DATOMIC128_BUILD_TESTS=ON ${{ env.toolset && format('-T {0}', env.toolset) }} ${{ env.compiler != 'msvc-latest' && '-DCMAKE_CXX_FLAGS=-mcx16' }}
+          flags: ${{ matrix.compiler != 'msvc-latest' && '-mcx16' || null }}${{ matrix.stdlib && format(' -stdlib={0}', matrix.stdlib) }}
+        run: cmake . -Bbuild -DATOMIC128_BUILD_TESTS=ON ${{ env.toolset && format('-T {0}', env.toolset) }} ${{ env.flags && format('-DCMAKE_CXX_FLAGS="{0}"', env.flags) }}
       - name: build
         run: cmake --build build
       - name: test
